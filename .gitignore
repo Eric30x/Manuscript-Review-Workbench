@@ -1,0 +1,16 @@
+# ---- 后端运行期产物：上传的稿件、材料、批注，都不进仓库 ----
+backend/data/
+backend/.env
+backend/samples/sample-docs/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.DS_Store
+Thumbs.db

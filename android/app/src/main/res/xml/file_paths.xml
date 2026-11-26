@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 导出的签发版 docx 放在应用专属外部目录下，通过 FileProvider 授权给分享目标 -->
+    <external-files-path name="export" path="export/" />
+    <cache-path name="cache" path="." />
+</paths>
