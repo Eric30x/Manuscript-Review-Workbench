@@ -1,11 +1,9 @@
-"""稿件与参考材料的本地存储层（MVP：目录 + JSON，不引数据库）。
+"""稿件和参考资料文件存储，元数据支持目录 JSON 或 MySQL。
 
 设计约束来自队长给的接口约定：
 - 参考材料必须**按原文件名**保存。ai/ai_review.py 用 path.name 当 materials 字典的键，
   所以落盘文件名 = 前端展示的「这条证据来自 XXX.docx」。
 - 一份稿件可以有多个版本，每个版本各自带一份稿件与一组参考材料。
-
-以后要换 SQLite / 对象存储，只要保持这里的方法签名不变，server/main.py 不用改。
 
 落盘结构::
 
@@ -25,7 +23,10 @@ import secrets
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from threading import RLock
+from typing import Any, Callable, Sequence
+
+from .mysql_records import MySQLRecords
 
 _ID_PATTERN = re.compile(r"^ms-\d{8}-\d{6}-[0-9a-f]{4}$")
 # Windows / POSIX 都不允许出现在文件名里的字符：路径分隔符、通配符与控制字符。
@@ -74,9 +75,11 @@ def _file_info(path: Path) -> dict[str, Any]:
 
 
 class ArticleStore:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, mysql_url: str = "") -> None:
         self.root = Path(root)
         self.articles_dir = self.root / "articles"
+        self.lock = RLock()
+        self.records = MySQLRecords(mysql_url) if mysql_url else None
 
     # ---------------------------------------------------------------- 路径
 
@@ -119,18 +122,26 @@ class ArticleStore:
         manuscript_bytes: bytes,
         materials: Sequence[tuple[str, bytes]],
         title: str | None = None,
+        owner: str | None = None,
     ) -> dict[str, Any]:
         """新建稿件并落第 1 版，返回稿件元数据。"""
         article_id = self._new_id()
-        self.article_dir(article_id).mkdir(parents=True, exist_ok=True)
+        self.article_dir(article_id).mkdir(parents=True, exist_ok=False)
         self._write_version_files(article_id, 1, manuscript_name, manuscript_bytes, materials)
 
+        resolved_title = (title or "").strip() or Path(manuscript_name).stem or "未命名稿件"
         record: dict[str, Any] = {
             "article_id": article_id,
-            "title": (title or "").strip() or Path(manuscript_name).stem or "未命名稿件",
+            "title": resolved_title,
             "created_at": now_iso(),
             "updated_at": now_iso(),
-            "versions": [self._version_entry(article_id, 1, "初次上传")],
+            "versions": [self._version_entry(article_id, 1, "初次上传", resolved_title)],
+            "owner": owner,
+            "status": "DRAFT",
+            "current_step": None,
+            "passed_steps": [],
+            "timeline": [],
+            "comments": [],
         }
         self._write_record(record)
         return record
@@ -142,16 +153,27 @@ class ArticleStore:
         manuscript_bytes: bytes,
         materials: Sequence[tuple[str, bytes]] | None = None,
         note: str = "上传新版",
+        validate: Callable[[str, int], None] | None = None,
+        title: str | None = None,
     ) -> dict[str, Any]:
         """加一版。materials 传 None 表示沿用上一版的材料（改稿时不必重传）。"""
-        record = self.load(article_id)
-        version = self.latest_version(record) + 1
-        pairs = list(materials) if materials is not None else self._inherit_materials(record)
-        self._write_version_files(article_id, version, manuscript_name, manuscript_bytes, pairs)
-        record["versions"].append(self._version_entry(article_id, version, note))
-        record["updated_at"] = now_iso()
-        self._write_record(record)
-        return record
+        with self.lock:
+            record = self.load(article_id)
+            version = self.latest_version(record) + 1
+            pairs = list(materials) if materials is not None else self._inherit_materials(record)
+            try:
+                self._write_version_files(article_id, version, manuscript_name, manuscript_bytes, pairs)
+                if validate:
+                    validate(article_id, version)
+                if title and title.strip():
+                    record["title"] = title.strip()
+                record["versions"].append(self._version_entry(article_id, version, note, record["title"]))
+                record["updated_at"] = now_iso()
+                self._write_record(record)
+            except Exception:
+                shutil.rmtree(self.version_dir(article_id, version), ignore_errors=True)
+                raise
+            return record
 
     def _inherit_materials(self, record: dict[str, Any]) -> list[tuple[str, bytes]]:
         version = self.latest_version(record)
@@ -184,12 +206,13 @@ class ArticleStore:
             taken.add(unique)
             (materials_dir / unique).write_bytes(blob)
 
-    def _version_entry(self, article_id: str, version: int, note: str) -> dict[str, Any]:
+    def _version_entry(self, article_id: str, version: int, note: str, title: str) -> dict[str, Any]:
         # 文件已落盘，这里回读真实文件名与大小，保证元数据和磁盘一致。
         manuscript = self.manuscript_path(article_id, version)
         materials = self.material_paths(article_id, version)
         return {
             "version": version,
+            "title": title,
             "note": note,
             "created_at": now_iso(),
             "manuscript": _file_info(manuscript),
@@ -199,20 +222,41 @@ class ArticleStore:
             "issue_count": None,
         }
 
+    def save_record(self, record: dict[str, Any]) -> None:
+        self._write_record(record)
+
+    @staticmethod
+    def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+
     def _write_record(self, record: dict[str, Any]) -> None:
-        path = self.article_dir(record["article_id"]) / "article.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        article_id = record["article_id"]
+        if self.records:
+            self.records.save(article_id, record)
+            return
+        path = self.article_dir(article_id) / "article.json"
+        self._atomic_json(path, record)
+
 
     # ---------------------------------------------------------------- 读取
 
     def load(self, article_id: str) -> dict[str, Any]:
-        path = self.article_dir(article_id) / "article.json"
+        folder = self.article_dir(article_id)
+        if self.records:
+            record = self.records.load(article_id)
+            if record is None:
+                raise NotFound(f"找不到稿件：{article_id}")
+            return record
+        path = folder / "article.json"
         if not path.exists():
             raise NotFound(f"找不到稿件：{article_id}")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def list_all(self) -> list[dict[str, Any]]:
+        if self.records:
+            return sorted(self.records.list_all(), key=lambda item: item["created_at"], reverse=True)
         if not self.articles_dir.exists():
             return []
         records: list[dict[str, Any]] = []
@@ -240,16 +284,18 @@ class ArticleStore:
     # ---------------------------------------------------------------- 批注
 
     def save_check(self, article_id: str, version: int, payload: dict[str, Any]) -> None:
-        self.check_path(article_id, version).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        record = self.load(article_id)
-        entry = self.version_record(record, version)
-        entry["checked"] = True
-        entry["last_checked_at"] = payload.get("checked_at")
-        entry["issue_count"] = payload.get("issue_count", 0)
-        record["updated_at"] = now_iso()
-        self._write_record(record)
+        with self.lock:
+            record = self.load(article_id)
+            entry = self.version_record(record, version)
+            self._atomic_json(self.check_path(article_id, version), payload)
+            entry["checked"] = True
+            entry["last_checked_at"] = payload.get("checked_at")
+            entry["issue_count"] = payload.get("issue_count", 0)
+            record["updated_at"] = now_iso()
+            self._write_record(record)
+
+    def signed_path(self, article_id: str, version: int) -> Path:
+        return self.version_dir(article_id, version) / "签发版.docx"
 
     def load_check(self, article_id: str, version: int) -> dict[str, Any] | None:
         path = self.check_path(article_id, version)
@@ -264,4 +310,6 @@ class ArticleStore:
         target = self.article_dir(article_id)
         if target.parent != self.articles_dir:
             raise ValueError(f"拒绝删除不安全的路径：{target}")
+        if self.records:
+            self.records.delete(article_id)
         shutil.rmtree(target, ignore_errors=True)

@@ -66,18 +66,17 @@ fun EditScreen(
     var note by remember(articleId) { mutableStateOf(defaultNote(article)) }
     var showChannelPicker by remember { mutableStateOf(false) }
 
-    fun save(): Boolean {
+    fun save(onSaved: () -> Unit) {
         val body = paragraphs.map { it.trim() }.filter { it.isNotEmpty() }
         if (title.isBlank()) {
             vm.notify("标题不能为空")
-            return false
+            return
         }
         if (body.isEmpty()) {
             vm.notify("正文至少要有一段")
-            return false
+            return
         }
-        vm.saveRevision(article.id, title.trim(), pushText.trim(), body, note.ifBlank { "编辑稿件" })
-        return true
+        vm.saveRevision(article.id, title.trim(), pushText.trim(), body, note.ifBlank { "编辑稿件" }, onSaved)
     }
 
     Column(
@@ -88,7 +87,7 @@ fun EditScreen(
     ) {
         ScreenTopBar(
             title = "编辑稿件",
-            subtitle = "保存生成新版本 · 保存后 AI 自动重检",
+            subtitle = if (state.connected) "保存生成新版 · 保存后可重新运行 AI 核验" else "保存生成新版本",
             onBack = onBack
         )
 
@@ -101,7 +100,7 @@ fun EditScreen(
             Spacer(Modifier.height(4.dp))
             InfoBanner(
                 "当前 AI 批注 ${article.findings.size} 条，其中待核实 ${article.confirmCount} 条。" +
-                    "保存后会按新正文重新跑一遍检查。"
+                    if (state.connected) "保存后可对新正文重新核验。" else "保存后将按新正文重检。"
             )
             Spacer(Modifier.height(12.dp))
 
@@ -114,7 +113,7 @@ fun EditScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                if (!state.connected) OutlinedTextField(
                     value = pushText,
                     onValueChange = { pushText = it },
                     label = { Text("推送文案（订阅号列表里独立出现的那句话）") },
@@ -188,13 +187,13 @@ fun EditScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
-                    onClick = { if (save()) onBack() },
+                    onClick = { save(onBack) }, enabled = !state.busy,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("保存")
                 }
                 Button(
-                    onClick = { if (save()) showChannelPicker = true },
+                    onClick = { save { showChannelPicker = true } }, enabled = !state.busy,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(if (article.status == ArticleStatus.RETURNED) "保存并重新送审" else "保存并送审")
@@ -208,8 +207,7 @@ fun EditScreen(
             onDismiss = { showChannelPicker = false },
             onConfirm = { channel ->
                 showChannelPicker = false
-                vm.submit(article.id, channel)
-                onSent()
+                vm.submit(article.id, channel, onSent)
             }
         )
     }

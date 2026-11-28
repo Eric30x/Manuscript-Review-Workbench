@@ -45,6 +45,8 @@ import com.newsreview.workbench.ui.StatusChip
 import com.newsreview.workbench.ui.Tag
 import com.newsreview.workbench.ui.components.EmptyHint
 import com.newsreview.workbench.ui.components.InfoBanner
+import com.newsreview.workbench.ui.components.SegmentedRow
+import com.newsreview.workbench.ui.components.WordUploadDialog
 import com.newsreview.workbench.ui.relativeTime
 import com.newsreview.workbench.ui.theme.AppColors
 
@@ -62,6 +64,9 @@ fun HomeScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val role = state.role
     var showFlow by remember { mutableStateOf(false) }
+    var upload by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(0) }
+    val writerStates = listOf(ArticleStatus.DRAFT, ArticleStatus.IN_REVIEW, ArticleStatus.RETURNED, ArticleStatus.SIGNED)
 
     Column(
         modifier = Modifier
@@ -72,7 +77,8 @@ fun HomeScreen(
             title = "审稿工作台",
             subtitle = "${state.userName}　·　${role?.label ?: "未登录"}",
             actions = {
-                TextButton(onClick = onSwitchRole) { Text("切换角色") }
+                if (state.connected) TextButton(onClick = vm::refresh, enabled = !state.busy) { Text("刷新") }
+                TextButton(onClick = onSwitchRole, enabled = !state.busy) { Text("切换角色") }
             }
         )
         LazyColumn(
@@ -100,10 +106,13 @@ fun HomeScreen(
                 item {
                     SectionCard(title = "写稿人操作") {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(onClick = onImportWord, modifier = Modifier.fillMaxWidth()) {
-                                Text("导入 Word 稿件（样例自带修订痕迹）")
+                            OutlinedButton(
+                                onClick = { if (state.connected) upload = true else onImportWord() },
+                                modifier = Modifier.fillMaxWidth(), enabled = !state.busy
+                            ) {
+                                Text(if (state.connected) "选择并上传 Word 稿件" else "导入 Word 稿件（内置样例）")
                             }
-                            OutlinedButton(onClick = onNewArticle, modifier = Modifier.fillMaxWidth()) {
+                            if (!state.connected) OutlinedButton(onClick = onNewArticle, modifier = Modifier.fillMaxWidth()) {
                                 Text("新建空白稿件")
                             }
                         }
@@ -111,7 +120,7 @@ fun HomeScreen(
                 }
             }
 
-            item {
+            if (!state.connected) item {
                 SectionCard(title = "工具") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         InfoBanner(
@@ -132,14 +141,27 @@ fun HomeScreen(
             }
 
             item {
-                SectionCard(title = "最近稿件") {
+                SectionCard(title = if (role == Role.WRITER) "我的稿件" else "最近稿件") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        state.myArticles.forEach { article ->
+                        val filtered = if (role == Role.WRITER && state.connected) {
+                            SegmentedRow(listOf("全部") + writerStates.map { it.label }, filter, onSelect = { filter = it })
+                            if (filter == 0) state.myArticles else state.myArticles.filter {
+                                it.status == writerStates[filter - 1]
+                            }
+                        } else state.myArticles
+                        if (filtered.isEmpty()) EmptyHint("暂无稿件")
+                        filtered.forEach { article ->
                             ArticleRow(article = article, onClick = onOpenArticle)
                         }
                     }
                 }
             }
+        }
+    }
+
+    if (upload) {
+        WordUploadDialog(revision = false, busy = state.busy, onDismiss = { upload = false }) { file, materials ->
+            vm.uploadWord(file, materials, null) { upload = false }
         }
     }
 

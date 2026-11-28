@@ -24,7 +24,9 @@ data class WorkbenchState(
     val articles: List<Article> = emptyList(),
     val materials: List<ReferenceMaterial> = DemoData.materials(),
     val transcript: List<TranscriptCue> = DemoData.transcript(),
-    val notice: String? = null
+    val notice: String? = null,
+    val connected: Boolean = false,
+    val busy: Boolean = false
 ) {
     val userName: String get() = role?.let { DemoData.roleNames[it] } ?: ""
 
@@ -55,6 +57,7 @@ class WorkbenchRepository {
 
     private val checker = ArticleChecker.default()
     private val _state = MutableStateFlow(WorkbenchState())
+    private var demoBeforeServer: WorkbenchState? = null
     val state: StateFlow<WorkbenchState> = _state.asStateFlow()
 
     init {
@@ -73,6 +76,25 @@ class WorkbenchRepository {
 
     fun logout() = mutate { it.copy(role = null) }
 
+    fun setBusy(busy: Boolean) = mutate { it.copy(busy = busy) }
+
+    fun useServer(role: Role, articles: List<Article>) = mutate {
+        demoBeforeServer = it.copy(role = null, busy = false, notice = null)
+        WorkbenchState(role = role, articles = articles, materials = emptyList(),
+            transcript = emptyList(), connected = true, busy = it.busy)
+    }
+
+    fun leaveServer() {
+        demoBeforeServer?.let { _state.value = it }
+        demoBeforeServer = null
+    }
+
+    fun refreshRemote(articles: List<Article>) = mutate { it.copy(articles = articles) }
+
+    fun updateRemote(article: Article) = mutate { state ->
+        state.copy(articles = state.articles.filterNot { it.id == article.id } + article)
+    }
+
     fun notify(message: String) = mutate { it.copy(notice = message) }
 
     fun consumeNotice() = mutate { it.copy(notice = null) }
@@ -81,7 +103,7 @@ class WorkbenchRepository {
 
     fun reportOf(id: String): CheckReport? {
         val article = _state.value.article(id) ?: return null
-        return checkOf(article)
+        return if (_state.value.connected) CheckReport(article.findings, emptyList()) else checkOf(article)
     }
 
     private fun checkOf(article: Article): CheckReport = checker.check(

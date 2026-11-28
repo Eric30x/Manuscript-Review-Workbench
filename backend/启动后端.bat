@@ -10,7 +10,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import fastapi, uvicorn, docx, openai, multipart" >nul 2>nul
+python -c "import fastapi, uvicorn, docx, openai, multipart, pymysql" >nul 2>nul
 if errorlevel 1 (
     echo [i] 依赖还没装全，正在安装...
     python -m pip install -r requirements.txt
@@ -24,7 +24,7 @@ if errorlevel 1 (
 if not exist ".env" (
     echo [i] 还没有 backend\.env，已从 .env.example 复制一份。
     copy /y ".env.example" ".env" >nul
-    echo [i] 请把 DEEPSEEK_API_KEY 填进去，保存后关掉记事本。
+    echo [i] 填好 DEEPSEEK_API_KEY 和 WORKBENCH_DEMO_PASSWORD，保存后关掉记事本。
     notepad ".env"
 )
 

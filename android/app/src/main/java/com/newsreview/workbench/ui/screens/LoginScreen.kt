@@ -18,14 +18,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.newsreview.workbench.WorkbenchViewModel
@@ -35,13 +41,17 @@ import com.newsreview.workbench.ui.Tag
 import com.newsreview.workbench.ui.components.InfoBanner
 import com.newsreview.workbench.ui.theme.AppColors
 
-/**
- * 角色入口。演示版不做账号体系：选角色即进入，方便一次演示把三级审核跑完。
- * 真实版本这里会换成学校统一身份认证（一卡通 / OA 账号），角色由后台分配。
- */
+/** 可选本地样例，或使用后端配置的演示口令进入。 */
 @Composable
-fun LoginScreen(vm: WorkbenchViewModel, onEnter: (Role) -> Unit) {
+fun LoginScreen(
+    vm: WorkbenchViewModel,
+    onEnter: (Role) -> Unit,
+    onServerEnter: (Role, String, String) -> Unit
+) {
     val state by vm.state.collectAsStateWithLifecycle()
+    var connected by remember { mutableStateOf(vm.serverAddress.isNotBlank()) }
+    var address by remember { mutableStateOf(vm.serverAddress) }
+    var password by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -78,7 +88,19 @@ fun LoginScreen(vm: WorkbenchViewModel, onEnter: (Role) -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
 
-        InfoBanner("演示版不校验密码：选一个角色进入，就能沿同一条稿件把整条三审流程走完。")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("连接团队后端", modifier = Modifier.weight(1f))
+            Switch(checked = connected, onCheckedChange = { connected = it }, enabled = !state.busy)
+        }
+        if (connected) {
+            OutlinedTextField(address, { address = it }, label = { Text("后端地址") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !state.busy)
+            OutlinedTextField(password, { password = it }, label = { Text("演示口令") },
+                singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !state.busy,
+                visualTransformation = PasswordVisualTransformation())
+        } else {
+            InfoBanner("本地演示使用内置样例。打开「连接团队后端」即可上传自己的稿件并运行真实审核。")
+        }
         Spacer(Modifier.height(20.dp))
 
         Text(
@@ -88,18 +110,13 @@ fun LoginScreen(vm: WorkbenchViewModel, onEnter: (Role) -> Unit) {
             fontWeight = FontWeight.SemiBold
         )
         Spacer(Modifier.height(4.dp))
-        Text(
-            "当前 ${state.articles.size} 篇演示稿件 · ${state.materials.size} 份参考资料 · ${state.transcript.size} 条录音转写",
-            style = MaterialTheme.typography.labelMedium,
-            color = AppColors.InkSoft
-        )
         Spacer(Modifier.height(10.dp))
-
-        Role.entries.forEach { role ->
+        Role.entries.filter { !connected || it !in listOf(Role.PUBLISHER, Role.ADMIN) }.forEach { role ->
             RoleCard(
                 role = role,
                 name = vm.roleNames[role].orEmpty(),
-                onClick = { onEnter(role) }
+                enabled = !state.busy && (!connected || (address.isNotBlank() && password.isNotBlank())),
+                onClick = { if (connected) onServerEnter(role, address, password) else onEnter(role) }
             )
         }
         Spacer(Modifier.height(32.dp))
@@ -107,13 +124,13 @@ fun LoginScreen(vm: WorkbenchViewModel, onEnter: (Role) -> Unit) {
 }
 
 @Composable
-private fun RoleCard(role: Role, name: String, onClick: () -> Unit) {
+private fun RoleCard(role: Role, name: String, enabled: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
             .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = AppColors.CardBg,
         border = BorderStroke(1.dp, AppColors.Line)

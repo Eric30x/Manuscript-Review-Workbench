@@ -70,6 +70,7 @@ def fake_result() -> dict:
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("WORKBENCH_DEMO_PASSWORD", raising=False)
     monkeypatch.setattr(server_main, "store", ArticleStore(tmp_path / "data"))
     monkeypatch.setattr(server_main, "build_client", lambda: object())
     monkeypatch.setattr(server_main, "review_docx_files", lambda *args, **kwargs: fake_result())
@@ -209,3 +210,82 @@ def test_live_deepseek_smoke(tmp_path):
     )
     result = real_review(real_client, docs / "稿件初稿.docx", [docs / "签到汇总.docx"])
     assert isinstance(result.get("issues"), list)
+
+
+def test_demo_workflow_persists_signed_version_and_historical_notes(client, monkeypatch):
+    monkeypatch.setenv("WORKBENCH_DEMO_PASSWORD", "temporary-test-password")
+    accounts = {}
+
+    def login(role):
+        response = client.post("/api/session", json={"role": role, "password": "temporary-test-password"})
+        assert response.status_code == 200, response.text
+        return {"Authorization": "Bearer " + response.json()["token"]}
+
+    for role in ("WRITER", "REVIEW_L1", "REVIEW_L2", "FINAL"):
+        accounts[role] = login(role)
+    assert client.post("/api/session", json={"role": "FINAL", "password": "wrong"}).status_code == 401
+
+    def act(role, action, version=1, **kwargs):
+        return client.post(path + "/actions", headers=accounts[role],
+                           json={"action": action, "version": version, **kwargs})
+
+    quote = "共吸引约200人到场参与"
+    material = docx_bytes(["线上报名合计：200人。"])
+    attendance = docx_bytes(["现场实际签到人数：126人。"])
+    submitted = client.post("/api/manuscripts", headers=accounts["WRITER"], files=[
+        ("manuscript", ("稿件初稿.docx", docx_bytes(MANUSCRIPT_PARAGRAPHS))),
+        ("materials", ("报名统计.docx", material)),
+        ("materials", ("签到汇总.docx", attendance)),
+    ])
+    assert submitted.status_code == 201, submitted.text
+    path = "/api/manuscripts/" + submitted.json()["article_id"]
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=accounts["REVIEW_L1"]).status_code == 403
+    assert client.post(path + "/versions/1/check", headers=accounts["WRITER"]).status_code == 200
+    assert act("WRITER", "SUBMIT").json()["current_step"] == "FIRST"
+    assert act("FINAL", "SIGN").status_code == 403
+    pending = client.get("/api/manuscripts?pending=true", headers=accounts["REVIEW_L1"]).json()
+    assert pending["count"] == 1
+    assert act("REVIEW_L1", "PASS").json()["current_step"] == "SECOND"
+    assert act("REVIEW_L2", "RETURN", paragraph_id="P2", quote="无法定位", note="核对人数").status_code == 422
+    sent_back = act("REVIEW_L2", "RETURN", paragraph_id="P2", quote=quote, note="请区分报名和签到人数")
+    assert sent_back.status_code == 200, sent_back.text
+    assert sent_back.json()["comments"][-1]["quote"] == quote
+    assert act("WRITER", "RESUBMIT").status_code == 409
+
+    corrupt = client.post(path + "/versions", headers=accounts["WRITER"],
+                          files={"manuscript": ("坏稿.docx", b"invalid")})
+    assert corrupt.status_code == 400
+    assert client.get(path, headers=accounts["WRITER"]).json()["latest_version"] == 1
+    corrected = "校园开放日共有200人报名，126人签到。"
+    revision = client.post(path + "/versions", headers=accounts["WRITER"],
+                           files={"manuscript": ("稿件新版.docx", docx_bytes([corrected]))})
+    assert revision.status_code == 201 and revision.json()["version"] == 2
+
+    def recheck(_client, _manuscript, materials, *, review_note):
+        assert review_note == "请区分报名和签到人数"
+        assert sorted(path.name for path in materials) == ["报名统计.docx", "签到汇总.docx"]
+        return {"issues": []}
+
+    monkeypatch.setattr(server_main, "review_docx_files", recheck)
+    checked = client.post(path + "/versions/2/check", headers=accounts["WRITER"])
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["issues"] == [] and checked.json()["reviewed_return"]["version"] == 1
+    assert client.get(path + "/versions/1/check", headers=accounts["WRITER"]).json()["issue_count"] == 1
+    assert act("WRITER", "RESUBMIT", 2).json()["current_step"] == "SECOND"
+    assert act("REVIEW_L1", "PASS", 2).status_code == 403
+    assert act("REVIEW_L2", "PASS", 2).json()["current_step"] == "FINAL"
+    assert act("FINAL", "SIGN", 2).json()["signed_version"] == 2
+
+    # 创建新的存储实例，模拟同一数据目录的服务重启。
+    monkeypatch.setattr(server_main, "store", ArticleStore(server_main.store.root))
+    detail = client.get(path, headers=accounts["WRITER"]).json()
+    assert detail["status"] == "SIGNED" and detail["comments"][0]["version"] == 1
+    assert detail["paragraphs"]["P1"] == corrected
+    history = client.get(path + "/versions/1/paragraphs", headers=accounts["REVIEW_L2"])
+    assert quote in history.json()["P2"]
+    downloaded = client.get(path + "/signed", headers=accounts["WRITER"])
+    assert downloaded.status_code == 200
+    body = [p.text for p in Document(io.BytesIO(downloaded.content)).paragraphs]
+    assert body == [corrected, "初审：沈佳　复审：顾言　终审：郑毅"]
+    assert client.post(path + "/versions/2/check", headers=accounts["WRITER"]).status_code == 409

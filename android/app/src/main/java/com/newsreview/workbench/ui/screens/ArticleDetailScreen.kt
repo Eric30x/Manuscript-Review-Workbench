@@ -14,9 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +53,9 @@ import com.newsreview.workbench.domain.model.Role
 import com.newsreview.workbench.ui.ScreenTopBar
 import com.newsreview.workbench.ui.SectionCard
 import com.newsreview.workbench.ui.Tag
+import com.newsreview.workbench.ui.components.AnchoredNoteDialog
 import com.newsreview.workbench.ui.components.ChannelPickerDialog
+import com.newsreview.workbench.ui.components.WordUploadDialog
 import com.newsreview.workbench.ui.components.CommentCard
 import com.newsreview.workbench.ui.components.EmptyHint
 import com.newsreview.workbench.ui.components.InfoBanner
@@ -72,7 +80,8 @@ fun ArticleDetailScreen(
     articleId: String,
     onBack: () -> Unit,
     onOpenAi: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    initialParagraph: Int = -1
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val article = state.article(articleId)
@@ -83,20 +92,33 @@ fun ArticleDetailScreen(
 
     val context = LocalContext.current
     val report = remember(article) { vm.reportOf(article.id) }
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableIntStateOf(if (initialParagraph >= 0) 1 else 0) }
+    var paragraph by remember { mutableIntStateOf(initialParagraph) }
     var showChannelPicker by remember { mutableStateOf(false) }
     var showReturnDialog by remember { mutableStateOf(false) }
     var showCommentDialog by remember { mutableStateOf(false) }
+    var showRevisionUpload by remember { mutableStateOf(false) }
+    var historical by remember { mutableStateOf<Pair<ReviewComment, String>?>(null) }
 
     val role = state.role
+    val canComment = "COMMENT" in article.allowedActions
     val exportAndShare: () -> Unit = {
-        val file = vm.exportSigned(article)
-        if (file == null) {
-            vm.notify("导出失败，请重试")
-        } else {
+        vm.exportSigned(article) { file ->
             runCatching { shareDocument(context, file) }
                 .onFailure { vm.notify("没有可用的分享应用，文件已导出：${file.name}") }
         }
+    }
+
+    fun jumpToComment(comment: ReviewComment) {
+        val target = comment.paragraphIndex ?: return
+        if (comment.sourceVersion != null && comment.sourceVersion != article.currentVersion?.no) {
+            vm.openHistoricalParagraph(article.id, comment.sourceVersion, target) { original ->
+                historical = comment to original
+            }
+            return
+        }
+        paragraph = target
+        tab = 1
     }
 
     Column(
@@ -133,7 +155,9 @@ fun ArticleDetailScreen(
                 0 -> CommentsTab(
                     article = article,
                     report = report,
-                    canToggle = role != null && role != Role.ADMIN,
+                    canToggle = !state.connected && role != null && role != Role.ADMIN,
+                    canAdd = !state.connected || canComment,
+                    onJump = ::jumpToComment,
                     onOpenAi = onOpenAi,
                     onToggleComment = { comment ->
                         vm.setCommentStatus(
@@ -145,15 +169,22 @@ fun ArticleDetailScreen(
                     onAddComment = { showCommentDialog = true }
                 )
 
-                1 -> OriginalTab(article = article)
+                1 -> OriginalTab(article = article, target = paragraph, connected = state.connected)
 
                 else -> TimelineTab(article = article)
             }
         }
 
+        if (state.connected && role == Role.WRITER && article.status == ArticleStatus.RETURNED) {
+            TextButton(
+                onClick = { showRevisionUpload = true }, enabled = !state.busy,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) { Text("上传新版 Word") }
+        }
         ActionBar(
             article = article,
             role = role,
+            connected = state.connected,
             onEdit = onEdit,
             onSend = { showChannelPicker = true },
             onReturn = { showReturnDialog = true },
@@ -174,7 +205,51 @@ fun ArticleDetailScreen(
         )
     }
 
-    if (showReturnDialog) {
+    historical?.let { (comment, original) ->
+        AlertDialog(
+            onDismissRequest = { historical = null },
+            title = { Text("第 ${comment.sourceVersion} 版 · 第 ${(comment.paragraphIndex ?: 0) + 1} 段") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(original)
+                    comment.anchorText?.let { Text("批注原句：$it", color = AppColors.Warn) }
+                    Text(comment.text)
+                }
+            },
+            confirmButton = { TextButton(onClick = { historical = null }) { Text("关闭") } }
+        )
+    }
+
+    if (showRevisionUpload) {
+        WordUploadDialog(revision = true, busy = state.busy, onDismiss = { showRevisionUpload = false }) {
+            file, materials ->
+            vm.uploadWord(file, materials, article.id) { showRevisionUpload = false }
+        }
+    }
+
+    if (state.connected && (showReturnDialog || showCommentDialog)) {
+        val selected = paragraph.takeIf { it in article.paragraphs.indices }
+        val finding = article.findings.firstOrNull { selected == null || it.paragraphIndex == selected }
+        val returning = showReturnDialog
+        AnchoredNoteDialog(
+            paragraphs = article.paragraphs,
+            initialParagraph = selected ?: finding?.paragraphIndex ?: 0,
+            initialQuote = finding?.quote,
+            returning = returning,
+            onDismiss = {
+                showReturnDialog = false
+                showCommentDialog = false
+            },
+            onConfirm = { index, quote, note ->
+                showReturnDialog = false
+                showCommentDialog = false
+                if (returning) vm.returnToWriter(article.id, note, index, quote)
+                else vm.addComment(article.id, index, quote, note)
+            }
+        )
+    }
+
+    if (showReturnDialog && !state.connected) {
         NoteInputDialog(
             title = "退回修改",
             label = "退改意见（必填）",
@@ -187,7 +262,7 @@ fun ArticleDetailScreen(
         )
     }
 
-    if (showCommentDialog) {
+    if (showCommentDialog && !state.connected) {
         NoteInputDialog(
             title = "添加批注",
             label = "批注内容",
@@ -216,6 +291,8 @@ private fun CommentsTab(
     article: Article,
     report: CheckReport?,
     canToggle: Boolean,
+    canAdd: Boolean,
+    onJump: (ReviewComment) -> Unit,
     onOpenAi: () -> Unit,
     onToggleComment: (ReviewComment) -> Unit,
     onAddComment: () -> Unit
@@ -276,11 +353,12 @@ private fun CommentsTab(
             CommentCard(
                 comment = comment,
                 canToggle = canToggle,
-                onToggle = { onToggleComment(comment) }
+                onToggle = { onToggleComment(comment) },
+                onJump = if (comment.paragraphIndex == null) null else { { onJump(comment) } }
             )
         }
 
-        item {
+        if (canAdd) item {
             TextButton(onClick = onAddComment) { Text("＋ 添加批注") }
         }
     }
@@ -314,8 +392,13 @@ private fun MetricTile(label: String, value: String, color: Color, modifier: Mod
 // ------------------------------------------------------------------ 页签二：稿件原文
 
 @Composable
-private fun OriginalTab(article: Article) {
+private fun OriginalTab(article: Article, target: Int, connected: Boolean) {
+    val list = rememberLazyListState()
+    LaunchedEffect(target, article.currentVersion?.no) {
+        if (target in article.paragraphs.indices) list.scrollToItem(target + 3)
+    }
     LazyColumn(
+        state = list,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -347,15 +430,19 @@ private fun OriginalTab(article: Article) {
         }
 
         item {
-            InfoBanner("正文里红底的字是按词库能直接改的，橙底的是要人工核实的。点右上角 AI 检查可以逐条看依据。")
+            InfoBanner(if (connected) "标色原句需要核实，可在 AI 检查里查看材料原文。"
+                else "红底是词库建议，橙底是待人工核实。点右上角 AI 检查查看依据。")
         }
 
-        item {
-            SectionCard(title = "正文") {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    article.paragraphs.forEachIndexed { index, text ->
-                        ParagraphBlock(index = index, text = text, findings = article.findings)
-                    }
+        item { Text("正文", fontWeight = FontWeight.SemiBold) }
+        itemsIndexed(article.paragraphs) { index, text ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (index == target) AppColors.WarnBg else AppColors.CardBg,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(Modifier.padding(12.dp)) {
+                    ParagraphBlock(index = index, text = text, findings = article.findings)
                 }
             }
         }
@@ -477,6 +564,7 @@ private fun TimelineTab(article: Article) {
 private fun ActionBar(
     article: Article,
     role: Role?,
+    connected: Boolean,
     onEdit: () -> Unit,
     onSend: () -> Unit,
     onReturn: () -> Unit,
@@ -486,7 +574,10 @@ private fun ActionBar(
     onPublish: () -> Unit
 ) {
     val step = article.currentStep
-    val canReview = article.status == ArticleStatus.IN_REVIEW && step != null && step.role == role
+    val canReview = if (connected) "RETURN" in article.allowedActions
+        else article.status == ArticleStatus.IN_REVIEW && step?.role == role && role != null
+    val canSubmit = if (connected) article.allowedActions.any { it == "SUBMIT" || it == "RESUBMIT" }
+        else role == Role.WRITER && article.status in listOf(ArticleStatus.DRAFT, ArticleStatus.RETURNED)
 
     Surface(color = Color.White, shadowElevation = 8.dp) {
         Column(
@@ -503,13 +594,13 @@ private fun ActionBar(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
-                    role == Role.WRITER && article.status == ArticleStatus.IN_REVIEW -> {
+                    !connected && role == Role.WRITER && article.status == ArticleStatus.IN_REVIEW -> {
                         OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
                             Text("继续修改并重提")
                         }
                     }
 
-                    role == Role.WRITER -> {
+                    canSubmit -> {
                         OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
                             Text("编辑稿件")
                         }
