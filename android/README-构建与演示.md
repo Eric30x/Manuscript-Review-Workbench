@@ -133,6 +133,7 @@
 | 报 `SDK location not found` | 项目根目录新建 `local.properties`，写一行 `sdk.dir=D:/Android/Sdk` |
 | **Run 按钮一直灰、点不动** | 基本只有一个原因：**Gradle Sync 没成功**。按 `Ctrl+Shift+O` 手动同步一次，等底部进度条走完 —— 同步成功后工具栏会出现 `app` 配置，▶ 立刻变绿。同步过还灰就 `File → Invalidate Caches / Restart` 重启 IDE。 |
 | 同步报 `Your project path contains non-ASCII characters` | 工程路径带中文（如"02-新闻稿审稿工作台"）会触发 AGP 的路径保护，Sync 直接失败、Run 就灰了。`gradle.properties` 里已写好 `android.overridePathCheck=true`，确认这一行在、再 Sync 即可（纯 Kotlin / Java 工程不受中文路径影响）。 |
+| 跑单元测试报 `ClassNotFoundException: xxxTest` | 路径含中文时，Gradle 传给测试进程的类路径走 `@argfile`：文件按 UTF-8 写、java 启动器按系统 ANSI 码页（中文 Windows 即 GBK）读，中文路径被读成乱码、测试类就加载不到。换到纯 ASCII 路径重跑即可；只影响 `testDebugUnitTest`，`assembleDebug` 与真机运行不受影响。 |
 | Run 按钮灰着 / 设备列表是空的 | 第 5 步没做完；真机没弹"允许调试"就拔插重来 |
 | 中文显示成方块 | 一般不会（字体由系统提供）；真遇到就把设备语言切成中文 |
 | `processDebugResources FAILED` 并报“另一个程序正在使用此文件” | 有旧的 Gradle 进程占着构建产物：在工程根目录执行 `.\gradlew.bat --stop`，再重新 Run |

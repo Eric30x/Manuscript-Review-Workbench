@@ -127,6 +127,33 @@ class WorkbenchViewModel(private val app: Application) : AndroidViewModel(app) {
         null
     }
 
+    /** 从手机里选中的真实 .docx 导入（离线模式）。解析链路与内置样例一致：zip + OOXML。 */
+    fun importDocx(uri: Uri, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = app.contentResolver.query(
+                        uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "导入稿件.docx"
+                    require(displayName.endsWith(".docx", ignoreCase = true)) { "请选择 .docx 文件：$displayName" }
+                    val stream = app.contentResolver.openInputStream(uri) ?: error("无法读取：$displayName")
+                    val content = DocxReader.read(stream)
+                    Triple(displayName, content.title, content)
+                }
+            }
+            outcome.onSuccess { (displayName, docTitle, content) ->
+                repo.notify(
+                    if (content.revisions.isEmpty()) "已导入 $displayName：${content.paragraphs.size} 段"
+                    else "已导入 $displayName：${content.paragraphs.size} 段，识别到 ${content.revisions.size} 处修订（默认接受并留痕）"
+                )
+                onDone(repo.importFromDocx(docTitle ?: displayName.removeSuffix(".docx"), content.paragraphs))
+            }.onFailure {
+                repo.notify("解析失败：${it.message}")
+                onDone(null)
+            }
+        }
+    }
+
     fun uploadWord(manuscript: Uri, materials: List<Uri>, id: String?, onReady: (String) -> Unit) {
         val api = server ?: return
         runNetwork({

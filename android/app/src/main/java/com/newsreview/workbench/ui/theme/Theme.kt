@@ -23,6 +23,13 @@ object AppColors {
     val Danger = Color(0xFFC0453F)
     val DangerBg = Color(0xFFFBE9E7)
     val MarkRed = Color(0xFFD9534F)
+
+    // 版面分层的补充色：主色仍是深蓝黑，下面几个用来把「原文区 / 批注区 / 操作区」分开。
+    val PrimaryDeep = Color(0xFF16293F)
+    val Accent = Color(0xFF2F6E8F)
+    val AccentSoft = Color(0xFFE7F0F5)
+    val SurfaceSunken = Color(0xFFEFF2F6)
+    val NoteBg = Color(0xFFF2F6FA)
 }
 
 private val LightColors = lightColorScheme(
@@ -30,12 +37,14 @@ private val LightColors = lightColorScheme(
     onPrimary = Color.White,
     primaryContainer = AppColors.PrimaryContainer,
     onPrimaryContainer = AppColors.Primary,
-    secondary = Color(0xFF4A6B8A),
+    secondary = AppColors.Accent,
     background = AppColors.PageBg,
     onBackground = AppColors.Ink,
     surface = AppColors.CardBg,
     onSurface = AppColors.Ink,
-    surfaceVariant = Color(0xFFEDF0F4),
+    surfaceVariant = AppColors.SurfaceSunken,
+    secondaryContainer = AppColors.AccentSoft,
+    onSecondaryContainer = AppColors.Accent,
     onSurfaceVariant = AppColors.InkSoft,
     outline = AppColors.Line,
     error = AppColors.Danger

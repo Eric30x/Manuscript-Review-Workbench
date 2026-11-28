@@ -53,7 +53,7 @@ object DemoData {
             kind = MaterialKind.NOTICE,
             lines = listOf(
                 "时间：6月15日（周六）9:00-11:30",
-                "地点：自动化学院教学实验室、科研实验室、创客中心",
+                "地点：本校教学实验室、科研实验室、创客中心",
                 "面向对象：高三考生及家长",
                 "注意事项：来访者由志愿者分组引导，实验室内不得触碰设备"
             )
@@ -77,7 +77,7 @@ object DemoData {
                 "1. 签到与分组（9:00-9:20）",
                 "2. 实验室参观，讲解：实验中心 张明老师",
                 "3. 交流环节，致辞：周宁 · 校团委组织部部长",
-                "主持：学院宣传中心"
+                "主持：本校宣传中心"
             )
         ),
         ReferenceMaterial(
@@ -85,7 +85,7 @@ object DemoData {
             name = "采访录音转写",
             kind = MaterialKind.TRANSCRIPT,
             lines = listOf(
-                "[00:12:04] 周宁：明年我们会启动试点，先在三个学院推，如果评估通过，再考虑全校铺开。",
+                "[00:12:04] 周宁：明年我们会启动试点，先在三个院系推，如果评估通过，再考虑全校铺开。",
                 "[00:13:41] 张明：这次开放了教学、科研和创客中心三处。",
                 "[00:15:02] 家长：孩子对机器人方向比较感兴趣。"
             )
@@ -98,7 +98,7 @@ object DemoData {
             startMs = 12 * 60_000L + 4_000L,
             endMs = 12 * 60_000L + 21_000L,
             speaker = "周宁",
-            text = "明年我们会启动试点，先在三个学院推，如果评估通过，再考虑全校铺开。"
+            text = "明年我们会启动试点，先在三个院系推，如果评估通过，再考虑全校铺开。"
         ),
         TranscriptCue(
             id = "cue-2",
@@ -125,14 +125,14 @@ object DemoData {
         val l1 = roleNames.getValue(Role.REVIEW_L1)
         val l2 = roleNames.getValue(Role.REVIEW_L2)
         val paragraphs = listOf(
-            "6月15日，本校举办校园开放日。自动化学院向考生和家长开放了教学实验室、科研实验室和创客中心。",
+            "6月15日，本校举办校园开放日，向考生和家长开放了教学实验室、科研实验室和创客中心。",
             "在大学生志愿者带领下，来访者走进实验场所，观看老师操作精密仪器，了解设备如何用于教学和研究。",
             "考生和家长围绕智能控制、机器人及电力电子技术等方向与现场老师交流，并通过演示了解相关专业的学习内容。",
-            "活动邀请校团委副书记 周宁出席。周宁在致辞中介绍了活动安排。",
-            "开放日为来访者提供了接触实验室的机会，也让他们对自动化专业的学习和实践有了更直观的认识。",
+            "活动邀请校团委副书记 周宁出席并致辞。",
+            "开放日为来访者提供了接触实验室的机会，也让他们对相关专业的学习和实践有了更直观的认识。",
             "据统计，本次开放日共有 200 人到场，现场反应热烈。",
-            "据学院内部通知，本次活动共投入志愿者 41 人。",
-            "周宁在交流中表示「明年将启动试点，先在三个学院推行」。"
+            "据内部通知，本次活动共投入志愿者 41 人。",
+            "周宁在交流中表示「明年将启动试点，先在三个院系推行」。"
         )
         val comments = listOf(
             comment("c-1", l2, Role.REVIEW_L2, null, "校园开放日报名情况", "核实到场人数：标题写“报名情况”，正文写“200 人到场”，推送写“200 人到场”，口径不统一。", CommentStatus.OPEN, hoursAgo = 20),
@@ -141,7 +141,7 @@ object DemoData {
             comment("c-4", l2, Role.REVIEW_L2, 3, "校团委副书记 周宁", "确认嘉宾职务，以活动方确认的信息为准。", CommentStatus.OPEN, hoursAgo = 20),
             comment("c-5", l2, Role.REVIEW_L2, 5, "200 人到场", "统一报名人数口径，写明是报名还是签到。", CommentStatus.OPEN, hoursAgo = 20),
             comment("c-6", l2, Role.REVIEW_L2, 7, "明年将启动试点", "核对采访引语，原话里有限定条件，别漏。", CommentStatus.OPEN, hoursAgo = 20),
-            comment("c-7", l2, Role.REVIEW_L2, 6, "据学院内部通知", "“内部通知”不宜出现在对外发布的稿件里，改为可公开表述。", CommentStatus.OPEN, hoursAgo = 20),
+            comment("c-7", l2, Role.REVIEW_L2, 6, "据内部通知", "“内部通知”不宜出现在对外发布的稿件里，改为可公开表述。", CommentStatus.OPEN, hoursAgo = 20),
             comment("c-8", l2, Role.REVIEW_L2, null, "全篇", "标题、正文、推送文案三处口径需统一。", CommentStatus.OPEN, hoursAgo = 20),
             comment("c-9", l2, Role.REVIEW_L2, 4, "有了更直观的认识", "“更直观的认识”偏主观，改为可核查的表述。", CommentStatus.OPEN, hoursAgo = 20),
             comment("c-10", l1, Role.REVIEW_L1, 0, "创客中心", "场所名称统一为“创客中心”，与通知一致。", CommentStatus.DONE, hoursAgo = 30),
@@ -193,10 +193,10 @@ object DemoData {
         val writer = roleNames.getValue(Role.WRITER)
         return Article(
             id = ARTICLE_TRAINING,
-            title = "学院举办志愿服务培训",
+            title = "本校举办志愿服务培训",
             pushText = "志愿服务培训顺利结束",
             paragraphs = listOf(
-                "5月18日，学院举办志愿服务培训，共有 60 名学生参加。",
+                "5月18日，本校举办志愿服务培训，共有 60 名学生参加。",
                 "培训内容包括志愿服务礼仪、应急处置与沟通技巧三个部分。",
                 "参训学生表示，通过培训对志愿服务的要求有了更清楚的认识。"
             ),
@@ -218,7 +218,7 @@ object DemoData {
             title = "秋季社团招新活动",
             pushText = "",
             paragraphs = listOf(
-                "10月上旬，学院社团开展秋季招新活动，共有 12 个社团参加。",
+                "10月上旬，本校社团开展秋季招新活动，共有 12 个社团参加。",
                 "招新现场设置展示与咨询区域，学生按兴趣了解社团情况。"
             ),
             status = ArticleStatus.DRAFT,
@@ -241,9 +241,9 @@ object DemoData {
             title = "校运动会顺利闭幕",
             pushText = "校运动会顺利闭幕，运动员表现突出",
             paragraphs = listOf(
-                "4月26日，学院组织学生参加校运动会，共有 128 名学生报名参赛。",
+                "4月26日，本校组织学生参加校运动会，共有 128 名学生报名参赛。",
                 "运动员在田径、球类与趣味项目中完成各项赛事，现场秩序良好。",
-                "学院为参赛学生提供了后勤保障与医疗保障服务。"
+                "本校为参赛学生提供了后勤保障与医疗保障服务。"
             ),
             status = ArticleStatus.SIGNED,
             channel = Channel.SCHOOL_SITE,

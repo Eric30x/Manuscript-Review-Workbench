@@ -21,16 +21,21 @@ class WorkbenchApi(private val baseUrl: String) {
             .getString("token")
     }
 
-    fun articles(): List<Article> = json("/api/manuscripts").getJSONArray("articles").objects().map {
+    fun articles(): List<Article> = json("/api/manuscripts").getJSONArray("articles").objects().map { item ->
+        val latest = item.optInt("latest_version", 0)
+        val count = maxOf(item.optInt("version_count", 0), latest)
         Article(
-            id = it.getString("article_id"),
-            title = it.getString("title"),
+            id = item.getString("article_id"),
+            title = item.getString("title"),
             pushText = "",
             paragraphs = emptyList(),
-            status = ArticleStatus.valueOf(it.getString("status")),
-            currentStep = it.text("current_step")?.let(ReviewStep::valueOf),
-            channel = it.text("channel")?.let(Channel::valueOf),
-            updatedAt = it.timestamp("updated_at")
+            // 列表接口只给版本号、不给正文：按版本数造占位版本，
+            // 首页列表的「第 N 版」与 currentVersion 才不会退化成「第 0 版」。
+            versions = (1..count).map { ArticleVersion(it, 0L, "写稿人", "", emptyList()) },
+            status = ArticleStatus.valueOf(item.getString("status")),
+            currentStep = item.text("current_step")?.let(ReviewStep::valueOf),
+            channel = item.text("channel")?.let(Channel::valueOf),
+            updatedAt = item.timestamp("updated_at")
         )
     }
 

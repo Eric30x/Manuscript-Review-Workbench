@@ -1,6 +1,5 @@
 package com.newsreview.workbench.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +57,7 @@ import com.newsreview.workbench.ui.components.ChannelPickerDialog
 import com.newsreview.workbench.ui.components.WordUploadDialog
 import com.newsreview.workbench.ui.components.CommentCard
 import com.newsreview.workbench.ui.components.EmptyHint
+import com.newsreview.workbench.ui.components.InlineNotes
 import com.newsreview.workbench.ui.components.InfoBanner
 import com.newsreview.workbench.ui.components.NoteInputDialog
 import com.newsreview.workbench.ui.components.ParagraphBlock
@@ -169,7 +169,12 @@ fun ArticleDetailScreen(
                     onAddComment = { showCommentDialog = true }
                 )
 
-                1 -> OriginalTab(article = article, target = paragraph, connected = state.connected)
+                1 -> OriginalTab(
+                    article = article,
+                    target = paragraph,
+                    connected = state.connected,
+                    onOpenAi = onOpenAi
+                )
 
                 else -> TimelineTab(article = article)
             }
@@ -308,29 +313,19 @@ private fun CommentsTab(
         item {
             SectionCard(title = "AI 预检摘要") {
                 Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        MetricTile(
-                            label = "需人工核实",
-                            value = "${report?.confirmRequired ?: 0}",
-                            color = AppColors.Warn,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricTile(
-                            label = "AI 批注",
-                            value = "${report?.findings?.size ?: 0}",
-                            color = AppColors.Primary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        MetricTile(
-                            label = "已核对一致",
-                            value = "${report?.agreements?.size ?: 0}",
-                            color = AppColors.Success,
-                            modifier = Modifier.weight(1f)
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Tag("待核实 ${report?.confirmRequired ?: 0}", AppColors.WarnBg, AppColors.Warn)
+                        Tag("批注 ${report?.findings?.size ?: 0}", AppColors.PrimaryContainer, AppColors.Primary)
+                        Tag("已核对 ${report?.agreements?.size ?: 0}", AppColors.SuccessBg, AppColors.Success)
                     }
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedButton(onClick = onOpenAi, modifier = Modifier.fillMaxWidth()) {
-                        Text("查看逐条证据链")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "每条批注都带证据链，可逐条指回材料原文。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AppColors.InkSoft
+                    )
+                    TextButton(onClick = onOpenAi, contentPadding = PaddingValues(0.dp)) {
+                        Text("查看逐条证据链 ›")
                     }
                 }
             }
@@ -364,35 +359,10 @@ private fun CommentsTab(
     }
 }
 
-@Composable
-private fun MetricTile(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = AppColors.PageBg,
-        border = BorderStroke(1.dp, AppColors.Line)
-    ) {
-        Column(Modifier.padding(vertical = 10.dp, horizontal = 8.dp)) {
-            Text(
-                value,
-                style = MaterialTheme.typography.titleLarge,
-                color = color,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = AppColors.InkSoft,
-                maxLines = 1
-            )
-        }
-    }
-}
-
 // ------------------------------------------------------------------ 页签二：稿件原文
 
 @Composable
-private fun OriginalTab(article: Article, target: Int, connected: Boolean) {
+private fun OriginalTab(article: Article, target: Int, connected: Boolean, onOpenAi: () -> Unit) {
     val list = rememberLazyListState()
     LaunchedEffect(target, article.currentVersion?.no) {
         if (target in article.paragraphs.indices) list.scrollToItem(target + 3)
@@ -430,19 +400,33 @@ private fun OriginalTab(article: Article, target: Int, connected: Boolean) {
         }
 
         item {
-            InfoBanner(if (connected) "标色原句需要核实，可在 AI 检查里查看材料原文。"
-                else "红底是词库建议，橙底是待人工核实。点右上角 AI 检查查看依据。")
+            InfoBanner(
+                if (connected) "标色原句需要核实，可在 AI 检查里查看材料原文。"
+                else "红底是词库建议，橙底是待人工核实。命中段落下会显示对应批注，点开可看依据。"
+            )
         }
 
         item { Text("正文", fontWeight = FontWeight.SemiBold) }
         itemsIndexed(article.paragraphs) { index, text ->
+            val paragraphFindings = article.findings.filter {
+                it.paragraphIndex == index && !it.ignored && !it.resolved
+            }
+            val paragraphComments = article.comments.filter { it.paragraphIndex == index }
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (index == target) AppColors.WarnBg else AppColors.CardBg,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Box(Modifier.padding(12.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     ParagraphBlock(index = index, text = text, findings = article.findings)
+                    if (paragraphFindings.isNotEmpty() || paragraphComments.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        InlineNotes(
+                            findings = paragraphFindings,
+                            comments = paragraphComments,
+                            onOpenAi = onOpenAi
+                        )
+                    }
                 }
             }
         }
