@@ -1,5 +1,7 @@
 package com.newsreview.workbench.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,6 +52,8 @@ import com.newsreview.workbench.ui.components.WordUploadDialog
 import com.newsreview.workbench.ui.relativeTime
 import com.newsreview.workbench.ui.theme.AppColors
 
+private const val DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 /** 工作台首页：今天轮到我干什么、我是谁、最近有哪些稿子。 */
 @Composable
 fun HomeScreen(
@@ -62,6 +66,9 @@ fun HomeScreen(
     onSwitchRole: () -> Unit
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val pickDocx = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importDocx(uri) { id -> if (id != null) onOpenArticle(id) }
+    }
     val role = state.role
     var showFlow by remember { mutableStateOf(false) }
     var upload by remember { mutableStateOf(false) }
@@ -107,13 +114,24 @@ fun HomeScreen(
                     SectionCard(title = "写稿人操作") {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
-                                onClick = { if (state.connected) upload = true else onImportWord() },
+                                onClick = {
+                                    if (state.connected) upload = true
+                                    else pickDocx.launch(arrayOf(DOCX_MIME, "application/octet-stream"))
+                                },
                                 modifier = Modifier.fillMaxWidth(), enabled = !state.busy
                             ) {
-                                Text(if (state.connected) "选择并上传 Word 稿件" else "导入 Word 稿件（内置样例）")
+                                Text(if (state.connected) "选择并上传 Word 稿件" else "从手机选择 Word 稿件")
                             }
-                            if (!state.connected) OutlinedButton(onClick = onNewArticle, modifier = Modifier.fillMaxWidth()) {
-                                Text("新建空白稿件")
+                            if (!state.connected) {
+                                OutlinedButton(
+                                    onClick = onImportWord,
+                                    modifier = Modifier.fillMaxWidth(), enabled = !state.busy
+                                ) {
+                                    Text("导入内置样例")
+                                }
+                                OutlinedButton(onClick = onNewArticle, modifier = Modifier.fillMaxWidth()) {
+                                    Text("新建空白稿件")
+                                }
                             }
                         }
                     }

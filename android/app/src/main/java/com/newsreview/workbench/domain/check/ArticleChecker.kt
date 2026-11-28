@@ -174,6 +174,8 @@ class ArticleChecker(
         val dateInBody = DATE_PATTERN.find(body)?.value
         return listOf(
             finding(
+                article = article,
+                anchor = dateInBody,
                 kind = FindingKind.CONSISTENCY,
                 level = FindingLevel.L2,
                 paragraphIndex = article.paragraphs.indexOfFirst { DATE_PATTERN.containsMatchIn(it) }.coerceAtLeast(0),
@@ -207,6 +209,8 @@ class ArticleChecker(
         val missing = places - inNotice.toSet()
         return listOf(
             finding(
+                article = article,
+                anchor = missing.first(),
                 kind = FindingKind.CONSISTENCY,
                 level = FindingLevel.L2,
                 paragraphIndex = article.paragraphs.indexOfFirst { it.contains(missing.first()) }.coerceAtLeast(0),
@@ -240,9 +244,11 @@ class ArticleChecker(
         )
         return listOf(
             finding(
+                article = article,
+                anchor = bodyScope,
                 kind = FindingKind.CONSISTENCY,
                 level = FindingLevel.L2,
-                paragraphIndex = 0,
+                paragraphIndex = bodyScope?.let { s -> article.paragraphs.indexOfFirst { it.contains(s) }.coerceAtLeast(0) } ?: 0,
                 quote = scopes.joinToString(" / "),
                 title = "标题、正文与推送文案的统计口径不一致",
                 detail = "三处分别用了不同的口径（${distinct.joinToString("、")}）。推送文案会独立出现在订阅号里，读者看不到正文语境，口径不同会被当成两个数。",
@@ -282,6 +288,8 @@ class ArticleChecker(
 
         return listOf(
             finding(
+                article = article,
+                anchor = bodyNumber,
                 kind = FindingKind.CONSISTENCY,
                 level = FindingLevel.L2,
                 paragraphIndex = paragraphIndex,
@@ -308,6 +316,8 @@ class ArticleChecker(
                 ).find(record)?.value ?: return@forEach
                 if (role != recordRole && !role.endsWith(recordRole) && !recordRole.endsWith(role)) {
                     result += finding(
+                        article = article,
+                        anchor = name,
                         kind = FindingKind.CONSISTENCY,
                         level = FindingLevel.L2,
                         paragraphIndex = index,
@@ -340,6 +350,8 @@ class ArticleChecker(
                 val condition = DISCARDED_CONDITIONS.firstOrNull { cue.text.contains(it) && !quote.contains(it) }
                 if (condition != null) {
                     result += finding(
+                        article = article,
+                        anchor = quote,
                         kind = FindingKind.FACT_SUPPORT,
                         level = FindingLevel.L3,
                         paragraphIndex = index,
@@ -355,6 +367,8 @@ class ArticleChecker(
                     )
                 } else {
                     result += finding(
+                        article = article,
+                        anchor = quote,
                         kind = FindingKind.FACT_SUPPORT,
                         level = FindingLevel.L3,
                         paragraphIndex = index,
@@ -377,6 +391,7 @@ class ArticleChecker(
         val result = ArrayList<Finding>()
         if (article.title.length > 24) {
             result += finding(
+                article = article,
                 kind = FindingKind.STRUCTURE,
                 level = FindingLevel.L3,
                 paragraphIndex = 0,
@@ -392,6 +407,7 @@ class ArticleChecker(
         }
         if (article.paragraphs.size < 3) {
             result += finding(
+                article = article,
                 kind = FindingKind.STRUCTURE,
                 level = FindingLevel.L3,
                 paragraphIndex = 0,
@@ -410,6 +426,7 @@ class ArticleChecker(
     // ---------------------------------------------------------------- helpers
 
     private fun finding(
+        article: Article,
         kind: FindingKind,
         level: FindingLevel,
         paragraphIndex: Int,
@@ -418,16 +435,18 @@ class ArticleChecker(
         detail: String,
         evidence: List<Evidence>,
         suggestions: List<String> = emptyList(),
-        needsConfirmOverride: Boolean? = null
+        needsConfirmOverride: Boolean? = null,
+        anchor: String? = null
     ): Finding {
         val confidence = round2(evidence.sumOf { it.delta }.coerceIn(0.0, 1.0))
+        val (start, end) = locate(article, paragraphIndex, anchor)
         return Finding(
             id = "F-$kind-$paragraphIndex-${quote.hashCode()}",
             level = level,
             kind = kind,
             paragraphIndex = paragraphIndex,
-            start = -1,
-            end = -1,
+            start = start,
+            end = end,
             quote = quote,
             title = title,
             detail = detail,
@@ -436,6 +455,19 @@ class ArticleChecker(
             suggestions = suggestions,
             needsConfirm = needsConfirmOverride ?: (confidence < CONFIRM_THRESHOLD)
         )
+    }
+
+    /**
+     * 在指定段落里定位 [anchor] 的真实字符区间，供原文内联高亮使用。
+     * 定位不到（anchor 为空 / 段落不存在 / 该段没有这段文字）就返回 (-1, -1)：
+     * 宁可不高亮，也绝不把高亮画到错误的文字上。
+     */
+    private fun locate(article: Article, paragraphIndex: Int, anchor: String?): Pair<Int, Int> {
+        if (anchor.isNullOrEmpty()) return -1 to -1
+        val text = article.paragraphs.getOrNull(paragraphIndex) ?: return -1 to -1
+        val start = text.indexOf(anchor)
+        if (start < 0) return -1 to -1
+        return start to (start + anchor.length)
     }
 
     private fun dedupe(findings: List<Finding>): List<Finding> {

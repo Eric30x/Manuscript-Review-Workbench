@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +43,7 @@ import com.newsreview.workbench.domain.model.ActorAction
 import com.newsreview.workbench.domain.model.ArticleVersion
 import com.newsreview.workbench.domain.model.CommentStatus
 import com.newsreview.workbench.domain.model.Finding
+import com.newsreview.workbench.domain.model.FindingLevel
 import com.newsreview.workbench.domain.model.ReviewComment
 import com.newsreview.workbench.domain.model.TimelineEntry
 import com.newsreview.workbench.ui.Tag
@@ -186,6 +189,96 @@ private fun highlight(text: String, marks: List<Finding>) = buildAnnotatedString
         }
     }
     if (cursor < text.length) append(text.substring(cursor))
+}
+
+/**
+ * 段落内联批注条：把命中的 AI 批注和人工意见直接挂在那段正文下面，
+ * 审核人不用再跳到单独的「AI 报告」页去找。左侧色条沿用 AI 报告的级别配色。
+ * 只展示一句话结论，长文仍在 AI 报告里展开，避免原文页被塞满。
+ */
+@Composable
+fun InlineNotes(
+    findings: List<Finding>,
+    comments: List<ReviewComment>,
+    onOpenAi: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(AppColors.NoteBg)
+            .border(1.dp, AppColors.Line, RoundedCornerShape(10.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        findings.forEach { finding ->
+            val (tagBg, tagFg) = when (finding.level) {
+                FindingLevel.L1 -> AppColors.DangerBg to AppColors.Danger
+                FindingLevel.L2 -> AppColors.WarnBg to AppColors.Warn
+                FindingLevel.L3 -> AppColors.PrimaryContainer to AppColors.Primary
+            }
+            InlineNoteRow(accent = tagFg) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Tag(finding.level.label, tagBg, tagFg)
+                    if (finding.needsConfirm) {
+                        Spacer(Modifier.width(6.dp))
+                        Tag("待核实", AppColors.WarnBg, AppColors.Warn)
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    finding.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.Ink,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        comments.forEach { comment ->
+            InlineNoteRow(accent = AppColors.Accent) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Tag(comment.authorRole.label, AppColors.PrimaryContainer, AppColors.Primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        comment.author,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AppColors.InkSoft
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    comment.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AppColors.Ink,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (findings.isNotEmpty()) {
+            TextButton(onClick = onOpenAi, contentPadding = PaddingValues(0.dp)) {
+                Text("查看依据 ›", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InlineNoteRow(accent: Color, content: @Composable ColumnScope.() -> Unit) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(
+            Modifier
+                .padding(top = 3.dp)
+                .width(3.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(accent)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f), content = content)
+    }
 }
 
 /** 学校通知的硬要求：三审人员姓名要标在文末。这条是签发时自动写进去的。 */

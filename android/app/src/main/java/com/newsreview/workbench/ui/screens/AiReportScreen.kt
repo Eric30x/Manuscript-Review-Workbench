@@ -114,9 +114,10 @@ fun AiReportScreen(
             }
 
             item {
+                var expanded by remember { mutableStateOf(false) }
                 SectionCard(title = "本次预检") {
                     Column {
-                        Row {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "共 ${all.size} 条批注",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -128,27 +129,36 @@ fun AiReportScreen(
                                 AppColors.WarnBg,
                                 AppColors.Warn
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Tag(
-                                "${all.count { it.resolved }} 条已采纳",
-                                AppColors.SuccessBg,
-                                AppColors.Success
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Tag(
-                                "${all.count { it.ignored }} 条已忽略",
-                                AppColors.Line,
-                                AppColors.InkSoft
+                        }
+                        TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+                            Text(
+                                if (expanded) "收起明细" else "展开明细",
+                                style = MaterialTheme.typography.labelMedium
                             )
                         }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "L1 文字层 ${all.count { it.level == FindingLevel.L1 }} 条 · " +
-                                "L2 一致性 ${all.count { it.level == FindingLevel.L2 }} 条 · " +
-                                "L3 判断层 ${all.count { it.level == FindingLevel.L3 }} 条",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = AppColors.InkSoft
-                        )
+                        if (expanded) {
+                            Row {
+                                Tag(
+                                    "${all.count { it.resolved }} 条已采纳",
+                                    AppColors.SuccessBg,
+                                    AppColors.Success
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Tag(
+                                    "${all.count { it.ignored }} 条已忽略",
+                                    AppColors.Line,
+                                    AppColors.InkSoft
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "L1 文字层 ${all.count { it.level == FindingLevel.L1 }} 条 · " +
+                                    "L2 一致性 ${all.count { it.level == FindingLevel.L2 }} 条 · " +
+                                    "L3 判断层 ${all.count { it.level == FindingLevel.L3 }} 条",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AppColors.InkSoft
+                            )
+                        }
                     }
                 }
             }
@@ -187,17 +197,38 @@ fun AiReportScreen(
             }
 
             item {
-                SectionCard(title = "三层怎么分工") {
+                var expanded by remember { mutableStateOf(false) }
+                SectionCard {
                     Column {
-                        LevelLine("L1 文字层", "错别字、敏感词、规范用语。词表多模式匹配，能直接定位到字，可一键替换。")
-                        LevelLine("L2 一致性", "人名职务、时间、地点、统计口径，与通知 / 签到表 / 议程交叉核对。")
-                        LevelLine("L3 判断层", "引语有没有丢限定条件、结论有没有事实支撑、篇幅结构够不够。")
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "把握度 = 证据链各项增量之和；低于阈值的自动进「待核实」，由审核人定夺。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = AppColors.InkSoft
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "三层怎么分工",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = AppColors.Ink,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.weight(1f))
+                            TextButton(
+                                onClick = { expanded = !expanded },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text(
+                                    if (expanded) "收起" else "展开",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                        if (expanded) {
+                            LevelLine("L1 文字层", "错别字、敏感词、规范用语。词表多模式匹配，能直接定位到字，可一键替换。")
+                            LevelLine("L2 一致性", "人名职务、时间、地点、统计口径，与通知 / 签到表 / 议程交叉核对。")
+                            LevelLine("L3 判断层", "引语有没有丢限定条件、结论有没有事实支撑、篇幅结构够不够。")
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "把握度 = 证据链各项增量之和；低于阈值的自动进「待核实」，由审核人定夺。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AppColors.InkSoft
+                            )
+                        }
                     }
                 }
             }
