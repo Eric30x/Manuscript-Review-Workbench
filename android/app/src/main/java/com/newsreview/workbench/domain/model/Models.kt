@@ -86,7 +86,8 @@ data class ReviewComment(
     val text: String,
     val createdAt: Long,
     val status: CommentStatus = CommentStatus.OPEN,
-    val fromFindingId: String? = null
+    val fromFindingId: String? = null,
+    val sourceVersion: Int? = null
 )
 
 enum class RevisionKind(val label: String) { INSERT("插入"), DELETE("删除") }
@@ -177,7 +178,10 @@ data class Article(
     val attachments: List<Attachment> = emptyList(),
     val referenceIds: List<String> = emptyList(),
     val signers: Signers? = null,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val serverChecked: Boolean = false,
+    val reviewedReturnNote: String? = null,
+    val allowedActions: Set<String> = emptySet()
 ) {
     val currentVersion: ArticleVersion? get() = versions.maxByOrNull { it.no }
     val pendingCount: Int get() = comments.count { it.status == CommentStatus.OPEN }

@@ -45,3 +45,12 @@ def timeout() -> float:
 def data_dir() -> Path:
     raw = _env("WORKBENCH_DATA_DIR")
     return Path(raw).expanduser().resolve() if raw else BACKEND_ROOT / "data"
+
+
+def demo_password() -> str:
+    """空值保留原有的单机 API 调试模式。"""
+    return _env("WORKBENCH_DEMO_PASSWORD")
+
+
+def mysql_url() -> str:
+    return _env("WORKBENCH_MYSQL_URL")

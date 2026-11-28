@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -26,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.newsreview.workbench.WorkbenchViewModel
+import com.newsreview.workbench.domain.model.Article
+import com.newsreview.workbench.domain.model.ArticleStatus
 import com.newsreview.workbench.domain.model.FindingLevel
 import com.newsreview.workbench.domain.model.Role
 import com.newsreview.workbench.ui.ScreenTopBar
@@ -50,12 +54,17 @@ fun AiReportScreen(
     articleId: String,
     onBack: () -> Unit,
     onOpenArticle: () -> Unit,
+    onJump: (Int) -> Unit,
     onOpenMaterials: () -> Unit
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val article = state.article(articleId)
     if (article == null) {
         MissingArticleScreen(onBack = onBack)
+        return
+    }
+    if (state.connected) {
+        ServerReport(article, state.busy, onBack, { vm.check(articleId) }, onJump)
         return
     }
     val report = remember(article) { vm.reportOf(article.id) }
@@ -215,3 +224,57 @@ private fun LevelLine(title: String, detail: String) {
     }
 }
 
+
+
+@Composable
+private fun ServerReport(
+    article: Article,
+    busy: Boolean,
+    onBack: () -> Unit,
+    onCheck: () -> Unit,
+    onJump: (Int) -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        ScreenTopBar(title = "AI 核验", subtitle = article.title, onBack = onBack)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                SectionCard(title = "第 ${article.currentVersion?.no ?: 1} 版") {
+                    Text(when {
+                        !article.serverChecked -> "尚未核验"
+                        article.findings.isEmpty() -> "未发现有材料可对照的人数疑点"
+                        else -> "${article.findings.size} 条疑点待人工核实"
+                    })
+                    article.reviewedReturnNote?.let { Text("本轮已对照上次退改意见：$it") }
+                    if (article.status != ArticleStatus.SIGNED) {
+                        Button(onClick = onCheck, enabled = !busy) {
+                            Text(if (busy) "核验中…" else if (article.serverChecked) "重新核验" else "一键 AI 检查")
+                        }
+                    }
+                }
+            }
+            items(article.findings, key = { it.id }) { finding ->
+                SectionCard(title = finding.title) {
+                    Text("第 ${finding.paragraphIndex + 1} 段 · ${finding.quote}")
+                    Spacer(Modifier.height(6.dp))
+                    Text(finding.detail)
+                    var expanded by remember { mutableStateOf(false) }
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "收起材料依据" else "展开材料依据（${finding.evidence.size}）")
+                    }
+                    if (expanded) {
+                        finding.evidence.forEach { evidence ->
+                            Text(evidence.source.orEmpty(), fontWeight = FontWeight.SemiBold)
+                            Text(evidence.quote.orEmpty())
+                        }
+                    }
+                    finding.suggestions.forEach { Text("修改建议：$it") }
+                    TextButton(onClick = { onJump(finding.paragraphIndex) }) { Text("跳到原句") }
+                }
+            }
+        }
+    }
+}

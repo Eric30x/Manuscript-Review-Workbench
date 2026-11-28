@@ -50,7 +50,7 @@ object DocxWriter {
 
     private fun documentXml(title: String, paragraphs: List<String>, signerLine: String?, metaLine: String?): String {
         val body = StringBuilder()
-        body.append(paragraph(title, bold = true))
+        if (title.isNotBlank()) body.append(paragraph(title, bold = true))
         paragraphs.filter { it.isNotBlank() }.forEach { body.append(paragraph(it, bold = false)) }
         if (!signerLine.isNullOrBlank()) body.append(paragraph(signerLine, bold = true))
         if (!metaLine.isNullOrBlank()) body.append(paragraph(metaLine, bold = false))

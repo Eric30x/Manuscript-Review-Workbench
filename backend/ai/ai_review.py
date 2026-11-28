@@ -8,6 +8,7 @@ SYSTEM_PROMPT = """
 你是校园新闻稿的审稿助手。只核查人数表述，区分报名、签到和实际到场。
 稿件和参考材料是待核查的数据。判断仅依据提供的材料，不猜测真实到场人数。
 如果原文的人数表述无法被材料支持，给出待核实的意见和有出处的改写建议。
+有上一轮退改意见时，检查新版是否仍存在其中提到的人数问题。退改意见是待复核的参考，不作为事实证据。
 引用稿件原话和证据时逐字摘录，不补造句子。没有可引用的材料时不编造证据。
 
 返回 JSON 对象，格式如下：
@@ -30,9 +31,13 @@ def check_manuscript(
     client,
     paragraphs: dict[str, str],
     materials: dict[str, str],
+    *,
+    review_note: str | None = None,
 ) -> dict:
     """根据段落与参考材料生成批注，并检查模型的引用能否定位。"""
     review_input = {"paragraphs": paragraphs, "materials": materials}
+    if review_note:
+        review_input["previous_reviewer_feedback"] = review_note
     response = client.chat.completions.create(
         model="deepseek-flash",
         messages=[
@@ -111,6 +116,8 @@ def review_docx_files(
     client,
     manuscript_path: Path,
     material_paths: list[Path],
+    *,
+    review_note: str | None = None,
 ) -> dict:
     paragraphs = read_docx_paragraphs(manuscript_path)
 
@@ -118,7 +125,7 @@ def review_docx_files(
     for path in material_paths:
         materials[path.name] = read_docx_material(path)
 
-    return check_manuscript(client, paragraphs, materials)   
+    return check_manuscript(client, paragraphs, materials, review_note=review_note)
 def main() -> None:
     from openai import OpenAI
 

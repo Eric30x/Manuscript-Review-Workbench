@@ -218,7 +218,8 @@ fun CommentCard(
     comment: ReviewComment,
     canToggle: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onJump: (() -> Unit)? = null
 ) {
     val open = comment.status == CommentStatus.OPEN
     Surface(
@@ -261,6 +262,12 @@ fun CommentCard(
                         )
                     }
                 }
+            }
+            comment.sourceVersion?.let {
+                Text("第 $it 版意见", style = MaterialTheme.typography.labelSmall)
+            }
+            if (onJump != null) {
+                TextButton(onClick = onJump) { Text("定位原文") }
             }
             if (canToggle) {
                 Spacer(Modifier.height(8.dp))
